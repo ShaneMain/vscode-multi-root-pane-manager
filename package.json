@@ -2,7 +2,7 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "0.2.0",
+  "version": "1.1.0",
   "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
@@ -39,6 +39,29 @@
           "type": "boolean",
           "default": true,
           "description": "Enable/disable automatic pane management"
+        },
+        "multiRootPaneManager.colorTabs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Color-code editor tabs and explorer items by workspace folder"
+        },
+        "multiRootPaneManager.colorTerminals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create color-coded split terminals for each workspace folder on startup"
+        },
+        "multiRootPaneManager.layout": {
+          "type": "string",
+          "enum": [
+            "grid",
+            "all-right"
+          ],
+          "enumDescriptions": [
+            "Balanced grid: top row ceil(n/2), bottom row floor(n/2)",
+            "All splits go right: | 1 | 2 | 3 | 4 |"
+          ],
+          "default": "grid",
+          "description": "How to arrange panes for workspace folders"
         }
       }
     },

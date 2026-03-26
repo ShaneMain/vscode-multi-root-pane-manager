@@ -22,10 +22,131 @@ function dumpTabGroups(label: string) {
     }
 }
 
+// Color palette shared by tab decorations and terminal indicators
+const FOLDER_COLOR_IDS = [
+    'terminal.ansiBlue',
+    'terminal.ansiGreen',
+    'terminal.ansiYellow',
+    'terminal.ansiMagenta',
+    'terminal.ansiCyan',
+    'terminal.ansiRed',
+];
+
+function getFolderColor(index: number): vscode.ThemeColor {
+    return new vscode.ThemeColor(FOLDER_COLOR_IDS[index % FOLDER_COLOR_IDS.length]);
+}
+
+// FileDecorationProvider that colors tabs/explorer by workspace folder.
+// Files with git status get badge only (no color) so git decorations show through.
+class FolderColorDecorationProvider implements vscode.FileDecorationProvider {
+    private _onDidChange = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
+    readonly onDidChangeFileDecorations = this._onDidChange.event;
+    private gitChangedUris = new Set<string>();
+    private gitDisposables: vscode.Disposable[] = [];
+
+    constructor() {
+        this.initGitWatcher();
+    }
+
+    private async initGitWatcher() {
+        const gitExt = vscode.extensions.getExtension('vscode.git');
+        if (!gitExt) { return; }
+        if (!gitExt.isActive) { await gitExt.activate(); }
+
+        const git = gitExt.exports.getAPI(1);
+
+        const watchRepo = (repo: any) => {
+            this.gitDisposables.push(
+                repo.state.onDidChange(() => {
+                    this.refreshGitStatus(git);
+                    this._onDidChange.fire(undefined);
+                })
+            );
+        };
+
+        for (const repo of git.repositories) { watchRepo(repo); }
+        git.onDidOpenRepository((repo: any) => watchRepo(repo));
+
+        this.refreshGitStatus(git);
+    }
+
+    private refreshGitStatus(git: any) {
+        this.gitChangedUris.clear();
+        for (const repo of git.repositories) {
+            const changes = [
+                ...repo.state.workingTreeChanges,
+                ...repo.state.indexChanges,
+                ...repo.state.mergeChanges
+            ];
+            for (const c of changes) {
+                this.gitChangedUris.add(c.uri.toString());
+            }
+        }
+    }
+
+    provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+        const folder = vscode.workspace.getWorkspaceFolder(uri);
+        if (!folder) { return undefined; }
+        const badge = folder.name.charAt(0).toUpperCase();
+
+        // Git-affected files: badge only, no color — let git decorations show
+        if (this.gitChangedUris.has(uri.toString())) {
+            return new vscode.FileDecoration(badge, folder.name);
+        }
+
+        // Clean files: badge + folder color
+        return new vscode.FileDecoration(badge, folder.name, getFolderColor(folder.index));
+    }
+
+    dispose() {
+        this.gitDisposables.forEach(d => d.dispose());
+    }
+}
+
 let isEnabled = true;
 let isMoving = false;
 let statusBarItem: vscode.StatusBarItem;
 let tabDisposable: vscode.Disposable | undefined;
+let decorationDisposable: vscode.Disposable | undefined;
+
+// Builds the grid layout descriptor for vscode.setEditorLayout.
+// 2: | 1 | 2 |
+// 3: | 1 | 2 | / | 3 |
+// 4: | 1 | 2 | / | 3 | 4 |
+// 5: | 1 | 2 | 3 | / | 4 | 5 |
+function computeGridLayout(n: number): object {
+    if (n <= 1) { return { orientation: 0, groups: [{}] }; }
+    if (n === 2) { return { orientation: 0, groups: [{}, {}] }; }
+
+    const topCount = Math.ceil(n / 2);
+    const bottomCount = Math.floor(n / 2);
+    const topGroups = Array.from({ length: topCount }, () => ({}));
+    const bottomGroups = Array.from({ length: bottomCount }, () => ({}));
+
+    return {
+        orientation: 1, // vertical stacking (rows)
+        groups: [
+            { groups: topGroups, size: 0.5 },
+            { groups: bottomGroups, size: 0.5 }
+        ]
+    };
+}
+
+function computeLinearLayout(n: number): object {
+    const groups = Array.from({ length: n }, () => ({}));
+    return { orientation: 0, groups };
+}
+
+async function applyLayout(folderCount: number) {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    const mode = config.get<string>('layout', 'grid');
+    const layout = mode === 'all-right'
+        ? computeLinearLayout(folderCount)
+        : computeGridLayout(folderCount);
+
+    log(`Applying ${mode} layout for ${folderCount} folders: ${JSON.stringify(layout)}`);
+    await vscode.commands.executeCommand('vscode.setEditorLayout', layout);
+}
 
 // Snapshot of each group's preview tab URI from BEFORE the current event.
 // When a misplaced file opens as preview in the wrong group, VS Code replaces
@@ -42,6 +163,46 @@ function snapshotPreviews(): Map<number, string> {
         }
     }
     return snap;
+}
+
+function enableTabColors() {
+    if (decorationDisposable) { return; }
+    decorationDisposable = vscode.window.registerFileDecorationProvider(new FolderColorDecorationProvider());
+    log('Tab color coding enabled');
+}
+
+function disableTabColors() {
+    decorationDisposable?.dispose();
+    decorationDisposable = undefined;
+    log('Tab color coding disabled');
+}
+
+async function setupTerminals(folders: readonly vscode.WorkspaceFolder[]) {
+    // Don't duplicate if terminals already exist
+    if (vscode.window.terminals.length > 0) {
+        log('Terminals already exist, skipping terminal setup');
+        return;
+    }
+
+    let firstTerminal: vscode.Terminal | undefined;
+    for (const folder of folders) {
+        const color = getFolderColor(folder.index);
+        if (!firstTerminal) {
+            firstTerminal = vscode.window.createTerminal({
+                name: folder.name,
+                cwd: folder.uri,
+                color
+            });
+        } else {
+            vscode.window.createTerminal({
+                name: folder.name,
+                cwd: folder.uri,
+                color,
+                location: { parentTerminal: firstTerminal }
+            });
+        }
+        log(`Created terminal "${folder.name}" (color: ${FOLDER_COLOR_IDS[folder.index % FOLDER_COLOR_IDS.length]})`);
+    }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -69,9 +230,35 @@ export function activate(context: vscode.ExtensionContext) {
     updateStatusBar();
     statusBarItem.show();
 
-    // Start listening
+    // Prevent VS Code from collapsing empty editor groups (would shift all viewColumns)
+    const editorConfig = vscode.workspace.getConfiguration('workbench.editor');
+    if (editorConfig.get('closeEmptyGroups') !== false) {
+        editorConfig.update('closeEmptyGroups', false, vscode.ConfigurationTarget.Workspace);
+        log('Set workbench.editor.closeEmptyGroups = false (workspace)');
+    }
+
+    // Apply editor layout and start listening
     if (isEnabled) {
+        applyLayout(folders.length).catch(err => log(`Layout apply failed: ${err}`));
         startListening();
+    }
+
+    // Tab color coding
+    try {
+        if (config.get('colorTabs', true)) {
+            enableTabColors();
+        }
+    } catch (err) {
+        log(`Tab color init failed: ${err}`);
+    }
+
+    // Split terminals
+    try {
+        if (config.get('colorTerminals', true)) {
+            setupTerminals(folders);
+        }
+    } catch (err) {
+        log(`Terminal setup failed: ${err}`);
     }
 
     // Commands
@@ -80,6 +267,8 @@ export function activate(context: vscode.ExtensionContext) {
             isEnabled = !isEnabled;
             updateStatusBar();
             if (isEnabled) {
+                const f = vscode.workspace.workspaceFolders;
+                if (f && f.length >= 2) { applyLayout(f.length); }
                 startListening();
                 vscode.window.showInformationMessage('Pane Manager: ON');
             } else {
@@ -88,7 +277,9 @@ export function activate(context: vscode.ExtensionContext) {
             }
         }),
         vscode.commands.registerCommand('multiRootPaneManager.reset', () => {
-            vscode.window.showInformationMessage('Pane Manager: Reset');
+            const f = vscode.workspace.workspaceFolders;
+            if (f && f.length >= 2) { applyLayout(f.length); }
+            vscode.window.showInformationMessage('Pane Manager: Layout reset');
         })
     );
 
@@ -102,6 +293,14 @@ export function activate(context: vscode.ExtensionContext) {
                     isEnabled ? startListening() : stopListening();
                     updateStatusBar();
                 }
+            }
+            if (e.affectsConfiguration('multiRootPaneManager.layout')) {
+                const f = vscode.workspace.workspaceFolders;
+                if (isEnabled && f && f.length >= 2) { applyLayout(f.length); }
+            }
+            if (e.affectsConfiguration('multiRootPaneManager.colorTabs')) {
+                const on = vscode.workspace.getConfiguration('multiRootPaneManager').get('colorTabs', true);
+                on ? enableTabColors() : disableTabColors();
             }
         })
     );
@@ -261,4 +460,5 @@ function updateStatusBar() {
 
 export function deactivate() {
     stopListening();
+    disableTabColors();
 }

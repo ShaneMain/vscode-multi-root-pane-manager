@@ -1,66 +1,77 @@
 # Multi-Root Pane Manager
 
-A VS Code extension that automatically splits editor panes in multi-root workspaces and routes new tabs to specific panes.
+A VS Code extension that automatically organizes multi-root workspaces: each workspace folder gets its own editor pane, color-coded tabs, and a dedicated terminal.
 
 ## Features
 
-- **Automatic Pane Splitting**: Automatically splits the editor when opening a multi-root workspace
-- **Smart Tab Routing**: Routes newly opened tabs to a configured pane
-- **Configurable**: Choose which pane to route tabs to and the split direction
-- **Toggle On/Off**: Easily enable/disable the extension via status bar or command palette
+- **Automatic Layout** -- On activation, splits the editor into a balanced grid matching the number of workspace folders. Two folders get side-by-side panes; three or more get a two-row grid with the larger row on top.
+- **Tab Routing** -- Files automatically open in the pane assigned to their workspace folder. Open a file from any folder and it lands in the right place.
+- **Tab Pinning** -- Single-clicked files are promoted from preview to permanent tabs so they don't replace each other.
+- **Color-Coded Tabs** -- Clean files are tinted with their folder's color in the editor tabs and explorer. Files with git status (modified, staged, untracked) keep their git decoration colors instead.
+- **Color-Coded Terminals** -- Creates a split terminal for each workspace folder on startup, color-matched to the tab decorations.
+- **Displaced Preview Restoration** -- When a file opens as a preview in the wrong pane (replacing an existing preview), the extension restores the original preview after moving the file.
 
-## Usage
+## Layout Modes
 
-1. Open a multi-root workspace (File → Open Workspace from File...)
-2. The extension will automatically split the editor pane
-3. New tabs will automatically open in the configured pane (default: right pane)
+**Grid (default)** -- Balanced two-row layout:
 
-### Commands
+```
+2 folders: | F1 | F2 |
+3 folders: | F1 | F2 | / | F3 |
+4 folders: | F1 | F2 | / | F3 | F4 |
+5 folders: | F1 | F2 | F3 | / | F4 | F5 |
+```
 
-- `Multi-Root Pane Manager: Toggle Auto-Routing` - Enable/disable automatic tab routing
-- `Multi-Root Pane Manager: Split Pane Now` - Manually trigger pane split
+**All-right** -- Linear horizontal split:
 
-### Configuration
+```
+| F1 | F2 | F3 | F4 |
+```
 
-Access settings via File → Preferences → Settings, then search for "Multi-Root Pane Manager":
+## Commands
 
-- `multiRootPaneManager.enabled` (default: `true`) - Enable/disable the extension
-- `multiRootPaneManager.targetPaneIndex` (default: `1`) - The pane index where new tabs should open (0 = left, 1 = right)
-- `multiRootPaneManager.splitDirection` (default: `"vertical"`) - Split direction: `"vertical"` or `"horizontal"`
+- `Multi-Root Pane Manager: Toggle` -- Enable/disable tab routing and layout
+- `Multi-Root Pane Manager: Reset Pane Assignments` -- Re-apply the editor layout
 
-### Status Bar
+## Settings
 
-The extension adds a status bar item that shows the current state:
-- Click it to toggle the extension on/off
-- Green: Enabled
-- Yellow: Disabled
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `multiRootPaneManager.enabled` | `true` | Enable/disable automatic pane management |
+| `multiRootPaneManager.layout` | `"grid"` | Layout mode: `"grid"` or `"all-right"` |
+| `multiRootPaneManager.colorTabs` | `true` | Color-code editor tabs and explorer items by workspace folder |
+| `multiRootPaneManager.colorTerminals` | `true` | Create color-coded split terminals for each workspace folder on startup |
+
+## Status Bar
+
+Click **Pane Mgr: ON/OFF** in the status bar to toggle the extension.
+
+## Diagnostics
+
+Open the **Output** panel and select **Pane Manager** from the dropdown to see detailed logs of tab events, moves, and layout changes.
 
 ## Installation
 
-### From Source
-
-1. Clone or download this repository
-2. Open the folder in VS Code
-3. Run `npm install`
-4. Press F5 to open a new VS Code window with the extension loaded
-5. To package: `npm install -g @vscode/vsce && vsce package`
-
 ### From VSIX
 
-1. Package the extension: `vsce package`
-2. Install: Code → Install from VSIX...
+```sh
+code --install-extension multi-root-pane-manager-1.1.0.vsix
+```
+
+### From Source
+
+```sh
+git clone https://github.com/ShaneMain/vscode-multi-root-pane-manager.git
+cd vscode-multi-root-pane-manager
+npm install
+npm run compile
+npx vsce package
+```
 
 ## Requirements
 
 - VS Code 1.75.0 or higher
-
-## How It Works
-
-The extension:
-1. Detects multi-root workspaces on activation
-2. Automatically splits the editor into two panes (if not already split)
-3. Monitors tab open events
-4. Moves newly opened tabs to the configured target pane
+- A multi-root workspace (2+ folders)
 
 ## License
 
