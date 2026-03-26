@@ -6,9 +6,10 @@ A VS Code extension that automatically organizes multi-root workspaces: each wor
 
 - **Automatic Layout** -- On activation, splits the editor into a balanced grid matching the number of workspace folders. Two folders get side-by-side panes; three or more get a two-row grid with the larger row on top.
 - **Tab Routing** -- Files automatically open in the pane assigned to their workspace folder. Open a file from any folder and it lands in the right place.
+- **Automatic Tab Sorting** -- On startup and when the extension is enabled, all open tabs are automatically sorted into their correct panes based on workspace folder.
 - **Tab Pinning** -- Single-clicked files are promoted from preview to permanent tabs so they don't replace each other.
-- **Color-Coded Tabs** -- Clean files are tinted with their folder's color in the editor tabs and explorer. Files with git status (modified, staged, untracked) keep their git decoration colors instead.
-- **Color-Coded Terminals** -- Creates a split terminal for each workspace folder on startup, color-matched to the tab decorations.
+- **Color-Coded Tabs** -- Clean files are tinted with their folder's color in the editor tabs and explorer. Files with git status (modified, staged, untracked) keep their git decoration colors instead. This feature is optional and can be disabled via settings.
+- **Color-Coded Terminals** -- Creates a split terminal for each workspace folder on startup, color-matched to the tab decorations. This feature is optional and can be disabled via settings.
 - **Displaced Preview Restoration** -- When a file opens as a preview in the wrong pane (replacing an existing preview), the extension restores the original preview after moving the file.
 
 ## Layout Modes
@@ -31,7 +32,8 @@ A VS Code extension that automatically organizes multi-root workspaces: each wor
 ## Commands
 
 - `Multi-Root Pane Manager: Toggle` -- Enable/disable tab routing and layout
-- `Multi-Root Pane Manager: Reset Pane Assignments` -- Re-apply the editor layout
+- `Multi-Root Pane Manager: Reset Pane Assignments` -- Re-apply the editor layout and sort all tabs
+- `Multi-Root Pane Manager: Sort All Tabs` -- Manually sort all open tabs into their correct panes
 
 ## Settings
 
@@ -55,7 +57,7 @@ Open the **Output** panel and select **Pane Manager** from the dropdown to see d
 ### From VSIX
 
 ```sh
-code --install-extension multi-root-pane-manager-1.1.0.vsix
+code --install-extension multi-root-pane-manager-1.2.0.vsix
 ```
 
 ### From Source

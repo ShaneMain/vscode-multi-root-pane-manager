@@ -237,9 +237,13 @@ export function activate(context: vscode.ExtensionContext) {
         log('Set workbench.editor.closeEmptyGroups = false (workspace)');
     }
 
-    // Apply editor layout and start listening
+    // Apply editor layout, sort existing tabs, and start listening
     if (isEnabled) {
-        applyLayout(folders.length).catch(err => log(`Layout apply failed: ${err}`));
+        // Delay sorting slightly to ensure tabs are fully restored on startup
+        applyLayout(folders.length)
+            .then(() => new Promise(resolve => setTimeout(resolve, 500)))
+            .then(() => sortAllOpenTabs())
+            .catch(err => log(`Layout apply or tab sorting failed: ${err}`));
         startListening();
     }
 
@@ -268,7 +272,11 @@ export function activate(context: vscode.ExtensionContext) {
             updateStatusBar();
             if (isEnabled) {
                 const f = vscode.workspace.workspaceFolders;
-                if (f && f.length >= 2) { applyLayout(f.length); }
+                if (f && f.length >= 2) {
+                    applyLayout(f.length)
+                        .then(() => sortAllOpenTabs())
+                        .catch(err => log(`Toggle: layout or sorting failed: ${err}`));
+                }
                 startListening();
                 vscode.window.showInformationMessage('Pane Manager: ON');
             } else {
@@ -278,8 +286,26 @@ export function activate(context: vscode.ExtensionContext) {
         }),
         vscode.commands.registerCommand('multiRootPaneManager.reset', () => {
             const f = vscode.workspace.workspaceFolders;
-            if (f && f.length >= 2) { applyLayout(f.length); }
+            if (f && f.length >= 2) {
+                applyLayout(f.length)
+                    .then(() => sortAllOpenTabs())
+                    .catch(err => log(`Reset: layout or sorting failed: ${err}`));
+            }
             vscode.window.showInformationMessage('Pane Manager: Layout reset');
+        }),
+        vscode.commands.registerCommand('multiRootPaneManager.sortTabs', async () => {
+            const f = vscode.workspace.workspaceFolders;
+            if (!f || f.length < 2) {
+                vscode.window.showWarningMessage('Pane Manager: Multi-root workspace required');
+                return;
+            }
+            try {
+                await sortAllOpenTabs();
+                vscode.window.showInformationMessage('Pane Manager: Tabs sorted');
+            } catch (err) {
+                log(`Manual sort failed: ${err}`);
+                vscode.window.showErrorMessage('Pane Manager: Sort failed');
+            }
         })
     );
 
@@ -290,13 +316,27 @@ export function activate(context: vscode.ExtensionContext) {
                 const newEnabled = vscode.workspace.getConfiguration('multiRootPaneManager').get('enabled', true);
                 if (newEnabled !== isEnabled) {
                     isEnabled = newEnabled;
-                    isEnabled ? startListening() : stopListening();
+                    if (isEnabled) {
+                        const f = vscode.workspace.workspaceFolders;
+                        if (f && f.length >= 2) {
+                            applyLayout(f.length)
+                                .then(() => sortAllOpenTabs())
+                                .catch(err => log(`Config enable: layout or sorting failed: ${err}`));
+                        }
+                        startListening();
+                    } else {
+                        stopListening();
+                    }
                     updateStatusBar();
                 }
             }
             if (e.affectsConfiguration('multiRootPaneManager.layout')) {
                 const f = vscode.workspace.workspaceFolders;
-                if (isEnabled && f && f.length >= 2) { applyLayout(f.length); }
+                if (isEnabled && f && f.length >= 2) {
+                    applyLayout(f.length)
+                        .then(() => sortAllOpenTabs())
+                        .catch(err => log(`Layout change: sorting failed: ${err}`));
+                }
             }
             if (e.affectsConfiguration('multiRootPaneManager.colorTabs')) {
                 const on = vscode.workspace.getConfiguration('multiRootPaneManager').get('colorTabs', true);
@@ -445,6 +485,75 @@ async function pinTab(tab: vscode.Tab) {
     } finally {
         isMoving = false;
     }
+}
+
+async function sortAllOpenTabs() {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length < 2) {
+        return;
+    }
+
+    log('Sorting all open tabs...');
+    dumpTabGroups('before sorting');
+
+    // Collect all tabs that need to be moved
+    const tabsToMove: Array<{ tab: vscode.Tab; targetColumn: vscode.ViewColumn; uri: vscode.Uri }> = [];
+
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            if (!(tab.input instanceof vscode.TabInputText)) {
+                continue;
+            }
+
+            const uri = tab.input.uri;
+            const root = vscode.workspace.getWorkspaceFolder(uri);
+            if (!root) {
+                continue;
+            }
+
+            const targetColumn = root.index + 1;
+            const currentColumn = tab.group.viewColumn;
+
+            if (currentColumn !== targetColumn) {
+                tabsToMove.push({ tab, targetColumn, uri });
+            }
+        }
+    }
+
+    if (tabsToMove.length === 0) {
+        log('No tabs need sorting');
+        return;
+    }
+
+    log(`Found ${tabsToMove.length} tab(s) to sort`);
+
+    // Move tabs one at a time
+    isMoving = true;
+    try {
+        for (const { tab, targetColumn, uri } of tabsToMove) {
+            const fileName = uri.path.split('/').pop();
+            const sourceColumn = tab.group.viewColumn;
+
+            log(`  Moving "${fileName}" from col ${sourceColumn} to col ${targetColumn}`);
+
+            // Close in current location
+            await vscode.window.tabGroups.close(tab);
+
+            // Open in target location (not as preview)
+            await vscode.commands.executeCommand('vscode.open', uri, {
+                viewColumn: targetColumn,
+                preview: false
+            });
+        }
+    } catch (err) {
+        log(`ERROR sorting tabs: ${err}`);
+        console.error('Pane Manager: error sorting tabs', err);
+    } finally {
+        isMoving = false;
+    }
+
+    dumpTabGroups('after sorting');
+    log('Tab sorting complete');
 }
 
 function updateStatusBar() {

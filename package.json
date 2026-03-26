@@ -2,7 +2,7 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
@@ -73,6 +73,10 @@
       {
         "command": "multiRootPaneManager.reset",
         "title": "Multi-Root Pane Manager: Reset Pane Assignments"
+      },
+      {
+        "command": "multiRootPaneManager.sortTabs",
+        "title": "Multi-Root Pane Manager: Sort All Tabs"
       }
     ]
   },
