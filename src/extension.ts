@@ -122,11 +122,22 @@ function setupDocumentOpenHandler() {
 
 async function moveTabToGroup(tab: vscode.Tab, targetGroup: vscode.TabGroup) {
     try {
-        // Use VS Code's built-in tab move command
-        await vscode.commands.executeCommand('vscode.moveEditorToGroup', {
-            from: tab,
-            to: targetGroup.viewColumn
-        });
+        // Get the document URI from the tab
+        if (tab.input instanceof vscode.TabInputText) {
+            const uri = tab.input.uri;
+            const currentGroup = tab.group;
+
+            // Open the document in the target group
+            const doc = await vscode.workspace.openTextDocument(uri);
+            await vscode.window.showTextDocument(doc, {
+                viewColumn: targetGroup.viewColumn,
+                preserveFocus: true,
+                preview: tab.isPreview
+            });
+
+            // Close the tab in the original group
+            await vscode.window.tabGroups.close(tab);
+        }
     } catch (error) {
         console.error('Error moving tab:', error);
     }
