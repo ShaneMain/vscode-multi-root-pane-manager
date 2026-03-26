@@ -2,7 +2,7 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "1.3.0",
+  "version": "2.0.0",
   "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
@@ -48,7 +48,42 @@
         "multiRootPaneManager.colorTerminals": {
           "type": "boolean",
           "default": true,
-          "description": "Create color-coded split terminals for each workspace folder on startup"
+          "description": "Automatically switch terminal to match the active pane's workspace folder"
+        },
+        "multiRootPaneManager.eagerTerminals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create a terminal for every workspace folder on startup (adopts existing ones)"
+        },
+        "multiRootPaneManager.terminalLayout": {
+          "type": "string",
+          "enum": [
+            "tabs",
+            "split"
+          ],
+          "enumDescriptions": [
+            "Each folder gets a separate terminal tab",
+            "Terminals are split side-by-side in one panel"
+          ],
+          "default": "tabs",
+          "description": "How to arrange terminals for workspace folders"
+        },
+        "multiRootPaneManager.tabLabelFormat": {
+          "type": "string",
+          "enum": [
+            "emoji-dir-file",
+            "emoji-file",
+            "dir-file",
+            "none"
+          ],
+          "enumDescriptions": [
+            "🔵 FolderName / filename.ext",
+            "🔵 filename.ext",
+            "FolderName / filename.ext",
+            "Default VS Code tab labels (no modification)"
+          ],
+          "default": "emoji-dir-file",
+          "description": "How to format tab labels to identify which workspace folder a file belongs to"
         },
         "multiRootPaneManager.layout": {
           "type": "string",
@@ -62,7 +97,7 @@
             "All splits go right: | 1 | 2 | 3 | 4 |",
             "Primary folder gets 70% width, others split the remaining 30%"
           ],
-          "default": "grid",
+          "default": "primary-focus",
           "description": "How to arrange panes for workspace folders"
         },
         "multiRootPaneManager.excludePatterns": {
@@ -73,23 +108,23 @@
           },
           "description": "Glob patterns for files that should not be auto-routed (e.g., \"**/.vscode/**\", \"**/README.md\")"
         },
-        "multiRootPaneManager.customColors": {
+        "multiRootPaneManager.customEmoji": {
           "type": "array",
           "default": [],
           "items": {
             "type": "string"
           },
-          "description": "Custom hex colors for workspace folders (e.g., [\"#FF6B6B\", \"#4ECDC4\"]). Leave empty to use default terminal colors."
-        },
-        "multiRootPaneManager.focusTerminalOnSwitch": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically focus the corresponding terminal when switching to a workspace folder's pane"
+          "description": "Custom emoji badges for workspace folders (e.g., [\"🔴\", \"🔵\", \"🟢\"]). Leave empty to use defaults."
         },
         "multiRootPaneManager.sortOnStartup": {
           "type": "boolean",
           "default": true,
           "description": "Automatically sort tabs when VS Code starts"
+        },
+        "multiRootPaneManager.lazyPanes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Only create panes as files are opened from each workspace folder, avoiding empty panes"
         },
         "multiRootPaneManager.enableStickyTabs": {
           "type": "boolean",

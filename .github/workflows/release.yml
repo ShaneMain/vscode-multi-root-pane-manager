@@ -39,13 +39,26 @@ jobs:
       id: package_version
       run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
+    - name: Determine release type
+      id: release_type
+      run: |
+        # Get the branch that contains this tag
+        BRANCH=$(git branch -r --contains ${{ github.ref_name }} | grep -E '(origin/master|origin/main)' || echo "")
+        if [ -z "$BRANCH" ]; then
+          echo "prerelease=true" >> $GITHUB_OUTPUT
+          echo "release_name=Pre-release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        else
+          echo "prerelease=false" >> $GITHUB_OUTPUT
+          echo "release_name=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
+        fi
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
-        name: Release ${{ github.ref_name }}
+        name: ${{ steps.release_type.outputs.release_name }}
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.release_type.outputs.prerelease }}
         files: |
           *.vsix
         body: |
