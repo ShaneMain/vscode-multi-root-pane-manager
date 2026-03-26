@@ -4,7 +4,7 @@ import { initLog, log } from './log';
 import { getFolderEmoji } from './colors';
 import { initPanes, applyLayout, getColumnForFolder, ensurePaneForFolder, getActivePaneCount, getActiveFolderIndices, setActiveFolderIndices, setPrimaryPaneIndex, getPrimaryPaneIndex, isLazy } from './layout';
 import { focusTerminalForFolder, initTerminals } from './terminals';
-import { enableTabColors, disableTabColors, applyCustomTabLabels, clearCustomTabLabels, refreshDecorations } from './decorations';
+import { enableTabColors, disableTabColors, enablePaneTinting, disablePaneTinting, applyCustomTabLabels, clearCustomTabLabels, refreshDecorations } from './decorations';
 import { initRouting, sortAllOpenTabs, startListening, stopListening, getIsMoving } from './routing';
 
 let context: vscode.ExtensionContext;
@@ -207,6 +207,7 @@ export function activate(ctx: vscode.ExtensionContext) {
 
     // Decorations
     try { if (config.get('colorTabs', true)) { enableTabColors(); } } catch (err) { log(`Tab color init failed: ${err}`); }
+    try { if (config.get('colorPanes', true)) { enablePaneTinting(); } } catch (err) { log(`Pane tinting init failed: ${err}`); }
 
     // Custom tab labels
     applyCustomTabLabels();
@@ -307,6 +308,9 @@ export function activate(ctx: vscode.ExtensionContext) {
             if (e.affectsConfiguration('multiRootPaneManager.colorTabs')) {
                 vscode.workspace.getConfiguration('multiRootPaneManager').get('colorTabs', true) ? enableTabColors() : disableTabColors();
             }
+            if (e.affectsConfiguration('multiRootPaneManager.colorPanes')) {
+                vscode.workspace.getConfiguration('multiRootPaneManager').get('colorPanes', true) ? enablePaneTinting() : disablePaneTinting();
+            }
             if (e.affectsConfiguration('multiRootPaneManager.lazyPanes')) {
                 initPanes(vscode.workspace.getConfiguration('multiRootPaneManager').get('lazyPanes', true));
                 if (isEnabled) { applyLayout(getActivePaneCount()).then(() => sortAllOpenTabs()).catch(err => log(`LazyPanes change failed: ${err}`)); }
@@ -322,6 +326,7 @@ export function deactivate() {
     if (primaryDebounceTimer) { clearTimeout(primaryDebounceTimer); }
     stopListening();
     disableTabColors();
+    disablePaneTinting();
     clearCustomTabLabels();
     // Restore closeEmptyGroups to default
     const editorConfig = vscode.workspace.getConfiguration('workbench.editor');

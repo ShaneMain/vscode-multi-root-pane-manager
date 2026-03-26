@@ -43,7 +43,12 @@
         "multiRootPaneManager.colorTabs": {
           "type": "boolean",
           "default": true,
-          "description": "Color-code editor tabs and explorer items by workspace folder"
+          "description": "Show emoji badges on files in explorer by workspace folder"
+        },
+        "multiRootPaneManager.colorPanes": {
+          "type": "boolean",
+          "default": true,
+          "description": "Apply a subtle background tint to editors based on their workspace folder"
         },
         "multiRootPaneManager.colorTerminals": {
           "type": "boolean",

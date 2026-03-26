@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { log } from './log';
-import { getFolderEmoji } from './colors';
+import { getFolderEmoji, getPaneTintColor } from './colors';
 import { getColumnForFolder } from './layout';
+
+// ── File decoration provider (explorer badges) ──
 
 let decorationDisposable: vscode.Disposable | undefined;
 
@@ -9,10 +11,8 @@ function resolveFolder(uri: vscode.Uri): vscode.WorkspaceFolder | undefined {
     const folders = vscode.workspace.workspaceFolders;
     if (!folders || folders.length < 2) { return undefined; }
 
-    // Standard lookup — works for files and subdirs inside workspace folders
     let folder = vscode.workspace.getWorkspaceFolder(uri);
 
-    // Fallback for workspace root URIs (some VS Code versions miss these)
     if (!folder) {
         const uriStr = uri.toString().replace(/\/$/, '');
         folder = folders.find(f => f.uri.toString().replace(/\/$/, '') === uriStr);
@@ -26,21 +26,14 @@ class FolderColorDecorationProvider implements vscode.FileDecorationProvider {
     readonly onDidChangeFileDecorations = this._onDidChange.event;
 
     provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
-        // Skip non-file schemes
         if (uri.scheme !== 'file') { return undefined; }
 
         const folder = resolveFolder(uri);
-        if (!folder) {
-            log(`DECO no-folder: ${uri.fsPath}`);
-            return undefined;
-        }
+        if (!folder) { return undefined; }
 
         const emoji = getFolderEmoji(folder.index);
         const col = getColumnForFolder(folder.index);
-        const name = uri.path.split('/').pop();
         const tooltip = `${emoji} ${folder.name} (Pane ${col !== -1 ? col : '?'})`;
-
-        log(`DECO: "${name}" path=${uri.fsPath} → folder[${folder.index}] ${folder.name} → ${emoji}`);
 
         const decoration = new vscode.FileDecoration(emoji, tooltip);
         decoration.propagate = false;
@@ -71,13 +64,82 @@ export function refreshDecorations() {
     decorationProvider?.refresh();
 }
 
-// --- Custom tab labels ---
+// ── Pane background tinting ──
+
+let paneTintTypes: vscode.TextEditorDecorationType[] = [];
+let paneTintListener: vscode.Disposable | undefined;
+let paneTintDocListener: vscode.Disposable | undefined;
+
+function createTintTypes() {
+    disposePaneTintTypes();
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length < 2) { return; }
+
+    for (let i = 0; i < folders.length; i++) {
+        paneTintTypes.push(vscode.window.createTextEditorDecorationType({
+            backgroundColor: getPaneTintColor(i),
+            isWholeLine: true,
+        }));
+    }
+}
+
+function applyTintToEditor(editor: vscode.TextEditor) {
+    if (paneTintTypes.length === 0) { return; }
+
+    const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+
+    // Clear all tints from this editor
+    for (const type of paneTintTypes) {
+        editor.setDecorations(type, []);
+    }
+
+    if (!folder || folder.index >= paneTintTypes.length) { return; }
+
+    const range = new vscode.Range(0, 0, editor.document.lineCount, 0);
+    editor.setDecorations(paneTintTypes[folder.index], [range]);
+}
+
+function applyTintToAll() {
+    for (const editor of vscode.window.visibleTextEditors) {
+        applyTintToEditor(editor);
+    }
+}
+
+export function enablePaneTinting() {
+    createTintTypes();
+    applyTintToAll();
+
+    paneTintListener = vscode.window.onDidChangeVisibleTextEditors(() => applyTintToAll());
+    paneTintDocListener = vscode.workspace.onDidChangeTextDocument(e => {
+        for (const editor of vscode.window.visibleTextEditors) {
+            if (editor.document === e.document) { applyTintToEditor(editor); }
+        }
+    });
+
+    log('Pane background tinting enabled');
+}
+
+function disposePaneTintTypes() {
+    for (const type of paneTintTypes) { type.dispose(); }
+    paneTintTypes = [];
+}
+
+export function disablePaneTinting() {
+    paneTintListener?.dispose();
+    paneTintListener = undefined;
+    paneTintDocListener?.dispose();
+    paneTintDocListener = undefined;
+    disposePaneTintTypes();
+    log('Pane background tinting disabled');
+}
+
+// ── Custom tab labels ──
 
 export type TabLabelFormat = 'emoji-dir-file' | 'emoji-file' | 'dir-file' | 'none';
 
 export function applyCustomTabLabels() {
     const config = vscode.workspace.getConfiguration('multiRootPaneManager');
-    const format = config.get<TabLabelFormat>('tabLabelFormat', 'none');
+    const format = config.get<TabLabelFormat>('tabLabelFormat', 'emoji-dir-file');
     if (format === 'none') {
         clearCustomTabLabels();
         return;
