@@ -2,7 +2,7 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
@@ -35,21 +35,6 @@
     "configuration": {
       "title": "Multi-Root Pane Manager",
       "properties": {
-        "multiRootPaneManager.targetPaneIndex": {
-          "type": "number",
-          "default": 1,
-          "description": "The pane index (0-based) where new tabs should be opened. 0 = left pane, 1 = right pane.",
-          "minimum": 0
-        },
-        "multiRootPaneManager.splitDirection": {
-          "type": "string",
-          "enum": [
-            "horizontal",
-            "vertical"
-          ],
-          "default": "vertical",
-          "description": "Direction to split the editor pane"
-        },
         "multiRootPaneManager.enabled": {
           "type": "boolean",
           "default": true,
@@ -60,11 +45,11 @@
     "commands": [
       {
         "command": "multiRootPaneManager.toggle",
-        "title": "Multi-Root Pane Manager: Toggle Auto-Routing"
+        "title": "Multi-Root Pane Manager: Toggle"
       },
       {
-        "command": "multiRootPaneManager.splitNow",
-        "title": "Multi-Root Pane Manager: Split Pane Now"
+        "command": "multiRootPaneManager.reset",
+        "title": "Multi-Root Pane Manager: Reset Pane Assignments"
       }
     ]
   },
