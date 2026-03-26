@@ -1,0 +1,87 @@
+{
+  "name": "multi-root-pane-manager",
+  "displayName": "Multi-Root Pane Manager",
+  "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
+  "version": "0.1.0",
+  "publisher": "your-publisher-name",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager/issues"
+  },
+  "homepage": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager#readme",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "multi-root",
+    "workspace",
+    "pane",
+    "split",
+    "tabs",
+    "editor"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Multi-Root Pane Manager",
+      "properties": {
+        "multiRootPaneManager.targetPaneIndex": {
+          "type": "number",
+          "default": 1,
+          "description": "The pane index (0-based) where new tabs should be opened. 0 = left pane, 1 = right pane.",
+          "minimum": 0
+        },
+        "multiRootPaneManager.splitDirection": {
+          "type": "string",
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "default": "vertical",
+          "description": "Direction to split the editor pane"
+        },
+        "multiRootPaneManager.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable automatic pane management"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "multiRootPaneManager.toggle",
+        "title": "Multi-Root Pane Manager: Toggle Auto-Routing"
+      },
+      {
+        "command": "multiRootPaneManager.splitNow",
+        "title": "Multi-Root Pane Manager: Split Pane Now"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "@vscode/vsce": "^3.7.1",
+    "eslint": "^8.40.0",
+    "typescript": "^5.0.0"
+  }
+}

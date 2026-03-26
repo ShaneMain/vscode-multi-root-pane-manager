@@ -1,0 +1,17 @@
+{
+  "folders": [
+    {
+      "name": "Project 1",
+      "path": "."
+    },
+    {
+      "name": "Project 2",
+      "path": "../"
+    }
+  ],
+  "settings": {
+    "multiRootPaneManager.enabled": true,
+    "multiRootPaneManager.targetPaneIndex": 1,
+    "multiRootPaneManager.splitDirection": "vertical"
+  }
+}
