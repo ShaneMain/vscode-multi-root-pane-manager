@@ -3,16 +3,16 @@
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
   "version": "0.1.0",
-  "publisher": "your-publisher-name",
+  "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager.git"
+    "url": "https://github.com/ShaneMain/vscode-multi-root-pane-manager.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager/issues"
+    "url": "https://github.com/ShaneMain/vscode-multi-root-pane-manager/issues"
   },
-  "homepage": "https://github.com/YOUR-USERNAME/vscode-multi-root-pane-manager#readme",
+  "homepage": "https://github.com/ShaneMain/vscode-multi-root-pane-manager#readme",
   "engines": {
     "vscode": "^1.75.0"
   },
