@@ -18,10 +18,10 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v6
       with:
         node-version: '20'
         cache: 'npm'
@@ -40,7 +40,7 @@ jobs:
       run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
     - name: Create Release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         tag_name: ${{ github.ref_name }}
         name: Release ${{ github.ref_name }}

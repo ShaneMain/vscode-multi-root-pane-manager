@@ -84,12 +84,12 @@
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
-    "@types/node": "^18.x",
+    "@types/node": "^25.x",
     "@types/vscode": "^1.75.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.57.2",
+    "@typescript-eslint/parser": "^8.57.2",
     "@vscode/vsce": "^3.7.1",
-    "eslint": "^8.40.0",
-    "typescript": "^5.0.0"
+    "eslint": "^10.1.0",
+    "typescript": "^5.9.3"
   }
 }
