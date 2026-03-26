@@ -2,7 +2,7 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "ShaneMain",
   "license": "MIT",
   "repository": {
@@ -54,14 +54,52 @@
           "type": "string",
           "enum": [
             "grid",
-            "all-right"
+            "all-right",
+            "primary-focus"
           ],
           "enumDescriptions": [
             "Balanced grid: top row ceil(n/2), bottom row floor(n/2)",
-            "All splits go right: | 1 | 2 | 3 | 4 |"
+            "All splits go right: | 1 | 2 | 3 | 4 |",
+            "Primary folder gets 70% width, others split the remaining 30%"
           ],
           "default": "grid",
           "description": "How to arrange panes for workspace folders"
+        },
+        "multiRootPaneManager.excludePatterns": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Glob patterns for files that should not be auto-routed (e.g., \"**/.vscode/**\", \"**/README.md\")"
+        },
+        "multiRootPaneManager.customColors": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "description": "Custom hex colors for workspace folders (e.g., [\"#FF6B6B\", \"#4ECDC4\"]). Leave empty to use default terminal colors."
+        },
+        "multiRootPaneManager.focusTerminalOnSwitch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically focus the corresponding terminal when switching to a workspace folder's pane"
+        },
+        "multiRootPaneManager.sortOnStartup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sort tabs when VS Code starts"
+        },
+        "multiRootPaneManager.enableStickyTabs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Remember manually moved tabs and prevent auto-routing them"
+        },
+        "multiRootPaneManager.showWelcome": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show welcome notification on first activation"
         }
       }
     },
@@ -77,8 +115,99 @@
       {
         "command": "multiRootPaneManager.sortTabs",
         "title": "Multi-Root Pane Manager: Sort All Tabs"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane1",
+        "title": "Multi-Root Pane Manager: Focus Pane 1"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane2",
+        "title": "Multi-Root Pane Manager: Focus Pane 2"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane3",
+        "title": "Multi-Root Pane Manager: Focus Pane 3"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane4",
+        "title": "Multi-Root Pane Manager: Focus Pane 4"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane5",
+        "title": "Multi-Root Pane Manager: Focus Pane 5"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane6",
+        "title": "Multi-Root Pane Manager: Focus Pane 6"
+      },
+      {
+        "command": "multiRootPaneManager.cyclePaneLeft",
+        "title": "Multi-Root Pane Manager: Cycle Pane Left"
+      },
+      {
+        "command": "multiRootPaneManager.cyclePaneRight",
+        "title": "Multi-Root Pane Manager: Cycle Pane Right"
+      },
+      {
+        "command": "multiRootPaneManager.openInCorrectPane",
+        "title": "Multi-Root Pane Manager: Open in Correct Pane"
+      },
+      {
+        "command": "multiRootPaneManager.newFileInActiveFolder",
+        "title": "Multi-Root Pane Manager: New File in Active Folder"
+      },
+      {
+        "command": "multiRootPaneManager.showFolderQuickPick",
+        "title": "Multi-Root Pane Manager: Jump to Folder Pane"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "multiRootPaneManager.focusPane1",
+        "key": "ctrl+alt+1"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane2",
+        "key": "ctrl+alt+2"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane3",
+        "key": "ctrl+alt+3"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane4",
+        "key": "ctrl+alt+4"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane5",
+        "key": "ctrl+alt+5"
+      },
+      {
+        "command": "multiRootPaneManager.focusPane6",
+        "key": "ctrl+alt+6"
+      },
+      {
+        "command": "multiRootPaneManager.cyclePaneLeft",
+        "key": "ctrl+alt+left"
+      },
+      {
+        "command": "multiRootPaneManager.cyclePaneRight",
+        "key": "ctrl+alt+right"
+      },
+      {
+        "command": "multiRootPaneManager.newFileInActiveFolder",
+        "key": "ctrl+alt+n"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "multiRootPaneManager.openInCorrectPane",
+          "when": "!explorerResourceIsFolder",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

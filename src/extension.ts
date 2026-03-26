@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 const LOG_PREFIX = '[PaneMgr]';
 let outputChannel: vscode.OutputChannel;
+let context: vscode.ExtensionContext;
 
 function log(msg: string) {
     const ts = new Date().toISOString().slice(11, 23);
@@ -32,8 +34,71 @@ const FOLDER_COLOR_IDS = [
     'terminal.ansiRed',
 ];
 
-function getFolderColor(index: number): vscode.ThemeColor {
+function getFolderColor(index: number): vscode.ThemeColor | string {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    const customColors = config.get<string[]>('customColors', []);
+
+    if (customColors.length > 0) {
+        return customColors[index % customColors.length];
+    }
+
     return new vscode.ThemeColor(FOLDER_COLOR_IDS[index % FOLDER_COLOR_IDS.length]);
+}
+
+// Sticky tabs - manually moved tabs that should not be auto-routed
+let stickyTabs = new Set<string>();
+
+function isStickyTab(uri: vscode.Uri): boolean {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    if (!config.get('enableStickyTabs', true)) {
+        return false;
+    }
+    return stickyTabs.has(uri.toString());
+}
+
+function markAsSticky(uri: vscode.Uri) {
+    stickyTabs.add(uri.toString());
+    saveStickyTabs();
+}
+
+function unmarkAsSticky(uri: vscode.Uri) {
+    stickyTabs.delete(uri.toString());
+    saveStickyTabs();
+}
+
+function saveStickyTabs() {
+    if (context) {
+        context.workspaceState.update('stickyTabs', Array.from(stickyTabs));
+    }
+}
+
+function loadStickyTabs() {
+    if (context) {
+        const saved = context.workspaceState.get<string[]>('stickyTabs', []);
+        stickyTabs = new Set(saved);
+    }
+}
+
+// Check if file matches exclude patterns
+function isExcluded(uri: vscode.Uri): boolean {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    const patterns = config.get<string[]>('excludePatterns', []);
+
+    if (patterns.length === 0) {
+        return false;
+    }
+
+    const relativePath = vscode.workspace.asRelativePath(uri, false);
+
+    // Simple glob matching
+    return patterns.some(pattern => {
+        const regexPattern = pattern
+            .replace(/\*\*/g, '.*')
+            .replace(/\*/g, '[^/]*')
+            .replace(/\?/g, '.');
+        const regex = new RegExp(`^${regexPattern}$`);
+        return regex.test(relativePath);
+    });
 }
 
 // FileDecorationProvider that colors tabs/explorer by workspace folder.
@@ -95,7 +160,12 @@ class FolderColorDecorationProvider implements vscode.FileDecorationProvider {
         }
 
         // Clean files: badge + folder color
-        return new vscode.FileDecoration(badge, folder.name, getFolderColor(folder.index));
+        const colorValue = getFolderColor(folder.index);
+        const color = typeof colorValue === 'string'
+            ? undefined // Custom hex colors not fully supported in decorations, skip color
+            : colorValue;
+
+        return new vscode.FileDecoration(badge, folder.name, color);
     }
 
     dispose() {
@@ -108,6 +178,8 @@ let isMoving = false;
 let statusBarItem: vscode.StatusBarItem;
 let tabDisposable: vscode.Disposable | undefined;
 let decorationDisposable: vscode.Disposable | undefined;
+let terminalMap = new Map<string, vscode.Terminal>(); // folder name -> terminal
+let lastActiveColumn: vscode.ViewColumn | undefined;
 
 // Builds the grid layout descriptor for vscode.setEditorLayout.
 // 2: | 1 | 2 |
@@ -137,12 +209,34 @@ function computeLinearLayout(n: number): object {
     return { orientation: 0, groups };
 }
 
+function computePrimaryFocusLayout(n: number): object {
+    if (n <= 1) { return { orientation: 0, groups: [{}] }; }
+    if (n === 2) { return { orientation: 0, groups: [{ size: 0.7 }, { size: 0.3 }] }; }
+
+    // Primary folder gets 70%, others split the remaining 30%
+    const primary = { size: 0.7 };
+    const others = Array.from({ length: n - 1 }, () => ({}));
+    return {
+        orientation: 0,
+        groups: [primary, { groups: others, size: 0.3 }]
+    };
+}
+
 async function applyLayout(folderCount: number) {
     const config = vscode.workspace.getConfiguration('multiRootPaneManager');
     const mode = config.get<string>('layout', 'grid');
-    const layout = mode === 'all-right'
-        ? computeLinearLayout(folderCount)
-        : computeGridLayout(folderCount);
+    let layout;
+
+    switch (mode) {
+        case 'all-right':
+            layout = computeLinearLayout(folderCount);
+            break;
+        case 'primary-focus':
+            layout = computePrimaryFocusLayout(folderCount);
+            break;
+        default:
+            layout = computeGridLayout(folderCount);
+    }
 
     log(`Applying ${mode} layout for ${folderCount} folders: ${JSON.stringify(layout)}`);
     await vscode.commands.executeCommand('vscode.setEditorLayout', layout);
@@ -181,31 +275,88 @@ async function setupTerminals(folders: readonly vscode.WorkspaceFolder[]) {
     // Don't duplicate if terminals already exist
     if (vscode.window.terminals.length > 0) {
         log('Terminals already exist, skipping terminal setup');
+        // Still map existing terminals
+        for (const terminal of vscode.window.terminals) {
+            for (const folder of folders) {
+                if (terminal.name === folder.name) {
+                    terminalMap.set(folder.name, terminal);
+                }
+            }
+        }
         return;
     }
 
     let firstTerminal: vscode.Terminal | undefined;
     for (const folder of folders) {
-        const color = getFolderColor(folder.index);
-        if (!firstTerminal) {
-            firstTerminal = vscode.window.createTerminal({
+        const colorValue = getFolderColor(folder.index);
+        const color = typeof colorValue === 'string'
+            ? new vscode.ThemeColor('terminal.ansiBlue') // Fallback - custom colors not supported in terminals yet
+            : colorValue;
+
+        const terminal = !firstTerminal
+            ? vscode.window.createTerminal({
                 name: folder.name,
                 cwd: folder.uri,
                 color
-            });
-        } else {
-            vscode.window.createTerminal({
+            })
+            : vscode.window.createTerminal({
                 name: folder.name,
                 cwd: folder.uri,
                 color,
                 location: { parentTerminal: firstTerminal }
             });
+
+        if (!firstTerminal) {
+            firstTerminal = terminal;
         }
-        log(`Created terminal "${folder.name}" (color: ${FOLDER_COLOR_IDS[folder.index % FOLDER_COLOR_IDS.length]})`);
+
+        terminalMap.set(folder.name, terminal);
+        log(`Created terminal "${folder.name}"`);
     }
 }
 
-export function activate(context: vscode.ExtensionContext) {
+function focusTerminalForFolder(folder: vscode.WorkspaceFolder) {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    if (!config.get('focusTerminalOnSwitch', true)) {
+        return;
+    }
+
+    const terminal = terminalMap.get(folder.name);
+    if (terminal) {
+        terminal.show(true); // true = preserve focus on editor
+        log(`Focused terminal for "${folder.name}"`);
+    }
+}
+
+async function showWelcomeMessage() {
+    const config = vscode.workspace.getConfiguration('multiRootPaneManager');
+    if (!config.get('showWelcome', true)) {
+        return;
+    }
+
+    const hasShownWelcome = context.globalState.get('hasShownWelcome', false);
+    if (hasShownWelcome) {
+        return;
+    }
+
+    const result = await vscode.window.showInformationMessage(
+        'Multi-Root Pane Manager: Welcome! Each workspace folder now has its own pane. Use Ctrl+Alt+1/2/3 to navigate between panes.',
+        'Got it!',
+        'Settings',
+        'Don\'t show again'
+    );
+
+    if (result === 'Settings') {
+        vscode.commands.executeCommand('workbench.action.openSettings', '@ext:ShaneMain.multi-root-pane-manager');
+    } else if (result === 'Don\'t show again') {
+        config.update('showWelcome', false, vscode.ConfigurationTarget.Global);
+    }
+
+    context.globalState.update('hasShownWelcome', true);
+}
+
+export function activate(ctx: vscode.ExtensionContext) {
+    context = ctx;
     outputChannel = vscode.window.createOutputChannel('Pane Manager');
     context.subscriptions.push(outputChannel);
 
@@ -223,12 +374,26 @@ export function activate(context: vscode.ExtensionContext) {
     const config = vscode.workspace.getConfiguration('multiRootPaneManager');
     isEnabled = config.get('enabled', true);
 
+    // Load sticky tabs
+    loadStickyTabs();
+
     // Status bar
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-    statusBarItem.command = 'multiRootPaneManager.toggle';
+    statusBarItem.command = 'multiRootPaneManager.showFolderQuickPick';
     context.subscriptions.push(statusBarItem);
     updateStatusBar();
     statusBarItem.show();
+
+    // Track active editor changes for terminal focus
+    context.subscriptions.push(
+        vscode.window.onDidChangeActiveTextEditor(editor => {
+            if (!editor || !isEnabled) { return; }
+            const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+            if (folder) {
+                focusTerminalForFolder(folder);
+            }
+        })
+    );
 
     // Prevent VS Code from collapsing empty editor groups (would shift all viewColumns)
     const editorConfig = vscode.workspace.getConfiguration('workbench.editor');
@@ -239,10 +404,14 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Apply editor layout, sort existing tabs, and start listening
     if (isEnabled) {
-        // Delay sorting slightly to ensure tabs are fully restored on startup
+        const sortOnStartup = config.get('sortOnStartup', true);
         applyLayout(folders.length)
             .then(() => new Promise(resolve => setTimeout(resolve, 500)))
-            .then(() => sortAllOpenTabs())
+            .then(() => {
+                if (sortOnStartup) {
+                    return sortAllOpenTabs();
+                }
+            })
             .catch(err => log(`Layout apply or tab sorting failed: ${err}`));
         startListening();
     }
@@ -264,6 +433,9 @@ export function activate(context: vscode.ExtensionContext) {
     } catch (err) {
         log(`Terminal setup failed: ${err}`);
     }
+
+    // Show welcome message
+    setTimeout(() => showWelcomeMessage(), 1000);
 
     // Commands
     context.subscriptions.push(
@@ -305,6 +477,88 @@ export function activate(context: vscode.ExtensionContext) {
             } catch (err) {
                 log(`Manual sort failed: ${err}`);
                 vscode.window.showErrorMessage('Pane Manager: Sort failed');
+            }
+        }),
+
+        // Navigation commands
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane1', () => focusPane(1)),
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane2', () => focusPane(2)),
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane3', () => focusPane(3)),
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane4', () => focusPane(4)),
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane5', () => focusPane(5)),
+        vscode.commands.registerCommand('multiRootPaneManager.focusPane6', () => focusPane(6)),
+        vscode.commands.registerCommand('multiRootPaneManager.cyclePaneLeft', () => cyclePane(-1)),
+        vscode.commands.registerCommand('multiRootPaneManager.cyclePaneRight', () => cyclePane(1)),
+
+        // Utility commands
+        vscode.commands.registerCommand('multiRootPaneManager.openInCorrectPane', async (uri: vscode.Uri) => {
+            if (!uri) {
+                vscode.window.showWarningMessage('Pane Manager: No file selected');
+                return;
+            }
+            const folder = vscode.workspace.getWorkspaceFolder(uri);
+            if (!folder) {
+                vscode.window.showWarningMessage('Pane Manager: File not in workspace');
+                return;
+            }
+            const targetColumn = folder.index + 1;
+            await vscode.commands.executeCommand('vscode.open', uri, {
+                viewColumn: targetColumn,
+                preview: false
+            });
+            log(`Opened ${uri.path} in pane ${targetColumn}`);
+        }),
+
+        vscode.commands.registerCommand('multiRootPaneManager.newFileInActiveFolder', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor) {
+                vscode.window.showWarningMessage('Pane Manager: No active editor');
+                return;
+            }
+
+            const folder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+            if (!folder) {
+                vscode.window.showWarningMessage('Pane Manager: Active file not in workspace');
+                return;
+            }
+
+            const relativePath = await vscode.window.showInputBox({
+                prompt: `New file in ${folder.name}`,
+                placeHolder: 'path/to/file.ext'
+            });
+
+            if (!relativePath) { return; }
+
+            const newFileUri = vscode.Uri.file(path.join(folder.uri.fsPath, relativePath));
+
+            try {
+                await vscode.workspace.fs.writeFile(newFileUri, new Uint8Array());
+                await vscode.commands.executeCommand('vscode.open', newFileUri, {
+                    viewColumn: folder.index + 1,
+                    preview: false
+                });
+                log(`Created new file: ${newFileUri.path}`);
+            } catch (err) {
+                vscode.window.showErrorMessage(`Failed to create file: ${err}`);
+            }
+        }),
+
+        vscode.commands.registerCommand('multiRootPaneManager.showFolderQuickPick', async () => {
+            const folders = vscode.workspace.workspaceFolders;
+            if (!folders || folders.length < 2) { return; }
+
+            const items = folders.map(f => ({
+                label: `$(folder) ${f.name}`,
+                description: `Pane ${f.index + 1}`,
+                folder: f
+            }));
+
+            const selected = await vscode.window.showQuickPick(items, {
+                placeHolder: 'Jump to workspace folder pane'
+            });
+
+            if (selected) {
+                focusPane(selected.folder.index + 1);
             }
         })
     );
@@ -386,6 +640,19 @@ async function onTabsChanged(event: vscode.TabChangeEvent) {
         }
 
         const uri = tab.input.uri;
+
+        // Skip excluded files
+        if (isExcluded(uri)) {
+            log(`  SKIP ${fileName} — matches exclude pattern`);
+            continue;
+        }
+
+        // Skip sticky tabs
+        if (isStickyTab(uri)) {
+            log(`  SKIP ${fileName} — sticky tab`);
+            continue;
+        }
+
         const root = vscode.workspace.getWorkspaceFolder(uri);
         if (!root) {
             log(`  SKIP ${fileName} — no workspace folder match`);
@@ -422,6 +689,7 @@ async function onTabsChanged(event: vscode.TabChangeEvent) {
 
     // Update snapshot for next event
     prevPreviews = snapshotPreviews();
+    updateStatusBar();
 }
 
 async function moveTab(tab: vscode.Tab, targetColumn: vscode.ViewColumn, displacedPreviewUri?: string) {
@@ -506,6 +774,17 @@ async function sortAllOpenTabs() {
             }
 
             const uri = tab.input.uri;
+
+            // Skip excluded files
+            if (isExcluded(uri)) {
+                continue;
+            }
+
+            // Skip sticky tabs
+            if (isStickyTab(uri)) {
+                continue;
+            }
+
             const root = vscode.workspace.getWorkspaceFolder(uri);
             if (!root) {
                 continue;
@@ -557,14 +836,100 @@ async function sortAllOpenTabs() {
 }
 
 function updateStatusBar() {
-    statusBarItem.text = isEnabled
-        ? '$(split-horizontal) Pane Mgr: ON'
-        : '$(split-horizontal) Pane Mgr: OFF';
-    const folderCount = vscode.workspace.workspaceFolders?.length ?? 0;
-    statusBarItem.tooltip = `Multi-Root Pane Manager (click to toggle)\nWorkspace folders: ${folderCount}`;
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length < 2) {
+        statusBarItem.hide();
+        return;
+    }
+
+    // Get current folder based on active editor
+    const editor = vscode.window.activeTextEditor;
+    let currentFolder: vscode.WorkspaceFolder | undefined;
+    if (editor) {
+        currentFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+    }
+
+    // Count tabs per folder
+    const tabCounts = new Map<number, number>();
+    for (const group of vscode.window.tabGroups.all) {
+        for (const tab of group.tabs) {
+            if (tab.input instanceof vscode.TabInputText) {
+                const folder = vscode.workspace.getWorkspaceFolder(tab.input.uri);
+                if (folder) {
+                    tabCounts.set(folder.index, (tabCounts.get(folder.index) || 0) + 1);
+                }
+            }
+        }
+    }
+
+    if (currentFolder) {
+        const tabCount = tabCounts.get(currentFolder.index) || 0;
+        statusBarItem.text = `$(folder) ${currentFolder.name} $(file) ${tabCount}`;
+    } else {
+        statusBarItem.text = isEnabled
+            ? '$(split-horizontal) Pane Mgr'
+            : '$(split-horizontal) Pane Mgr: OFF';
+    }
+
+    const tooltipLines = [`Multi-Root Pane Manager (click to jump)`];
+    for (const folder of folders) {
+        const count = tabCounts.get(folder.index) || 0;
+        tooltipLines.push(`  ${folder.name}: ${count} tabs (Pane ${folder.index + 1})`);
+    }
+    statusBarItem.tooltip = tooltipLines.join('\n');
+
     statusBarItem.backgroundColor = isEnabled
         ? undefined
         : new vscode.ThemeColor('statusBarItem.warningBackground');
+}
+
+function focusPane(paneNumber: number) {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || paneNumber < 1 || paneNumber > folders.length) {
+        return;
+    }
+
+    const targetColumn = paneNumber;
+    const targetFolder = folders.find(f => f.index + 1 === targetColumn);
+
+    // Find first tab in target pane
+    for (const group of vscode.window.tabGroups.all) {
+        if (group.viewColumn === targetColumn && group.tabs.length > 0) {
+            const firstTab = group.tabs[0];
+            if (firstTab.input instanceof vscode.TabInputText) {
+                vscode.commands.executeCommand('vscode.open', firstTab.input.uri, {
+                    viewColumn: targetColumn,
+                    preserveFocus: false
+                });
+                if (targetFolder) {
+                    focusTerminalForFolder(targetFolder);
+                }
+                log(`Focused pane ${paneNumber}`);
+                return;
+            }
+        }
+    }
+
+    // If no tabs in pane, just focus the editor group
+    vscode.commands.executeCommand('workbench.action.focusFirstEditorGroup');
+    log(`Pane ${paneNumber} has no tabs`);
+}
+
+function cyclePane(direction: number) {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length < 2) { return; }
+
+    const editor = vscode.window.activeTextEditor;
+    let currentColumn = editor?.viewColumn || 1;
+
+    let nextColumn = currentColumn + direction;
+    if (nextColumn < 1) {
+        nextColumn = folders.length;
+    } else if (nextColumn > folders.length) {
+        nextColumn = 1;
+    }
+
+    focusPane(nextColumn);
 }
 
 export function deactivate() {
