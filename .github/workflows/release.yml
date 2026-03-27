@@ -81,6 +81,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Publish to VS Code Marketplace
+      continue-on-error: true
       run: npx vsce publish --packagePath *.vsix
       env:
         VSCE_PAT: ${{ secrets.VSCE_PAT }}
