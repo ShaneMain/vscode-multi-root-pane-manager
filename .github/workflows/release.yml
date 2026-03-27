@@ -79,3 +79,13 @@ jobs:
           - See commit history for details
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Publish to VS Code Marketplace
+      run: npx vsce publish --packagePath *.vsix
+      env:
+        VSCE_PAT: ${{ secrets.VSCE_PAT }}
+
+    - name: Publish to Open VSX Registry
+      run: npx ovsx publish *.vsix
+      env:
+        OVSX_PAT: ${{ secrets.OVSX_PAT }}
