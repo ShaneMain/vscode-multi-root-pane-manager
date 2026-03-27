@@ -2,9 +2,10 @@
   "name": "multi-root-pane-manager",
   "displayName": "Multi-Root Pane Manager",
   "description": "Automatically splits panes in multi-root workspaces and routes new tabs to specific panes",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "publisher": "ShaneMain",
   "license": "MIT",
+  "icon": "icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/ShaneMain/vscode-multi-root-pane-manager.git"
