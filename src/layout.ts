@@ -24,14 +24,16 @@ export function computePrimaryFocusLayout(n: number, primaryPos: number = 0): ob
     if (n <= 1) { return { orientation: 0, groups: [{}] }; }
 
     const clamped = Math.min(primaryPos, n - 1);
-    const otherSize = 0.3;
-    const primarySize = 0.7;
     const otherCount = n - 1;
+    // Scale primary down as pane count grows, ensuring others stay usable
+    const minOtherSize = 0.2;
+    const primarySize = Math.max(1 - otherCount * minOtherSize, 0.4);
+    const otherTotal = 1 - primarySize;
 
     if (n === 2) {
         return clamped === 0
-            ? { orientation: 0, groups: [{ size: primarySize }, { size: otherSize }] }
-            : { orientation: 0, groups: [{ size: otherSize }, { size: primarySize }] };
+            ? { orientation: 0, groups: [{ size: primarySize }, { size: otherTotal }] }
+            : { orientation: 0, groups: [{ size: otherTotal }, { size: primarySize }] };
     }
 
     const leftCount = clamped;
@@ -39,13 +41,13 @@ export function computePrimaryFocusLayout(n: number, primaryPos: number = 0): ob
     const groups: object[] = [];
 
     if (leftCount > 0) {
-        const leftSize = otherSize * (leftCount / otherCount);
+        const leftSize = otherTotal * (leftCount / otherCount);
         const leftGroups = Array.from({ length: leftCount }, () => ({}));
         groups.push(leftCount === 1 ? { size: leftSize } : { groups: leftGroups, size: leftSize });
     }
     groups.push({ size: primarySize });
     if (rightCount > 0) {
-        const rightSize = otherSize * (rightCount / otherCount);
+        const rightSize = otherTotal * (rightCount / otherCount);
         const rightGroups = Array.from({ length: rightCount }, () => ({}));
         groups.push(rightCount === 1 ? { size: rightSize } : { groups: rightGroups, size: rightSize });
     }

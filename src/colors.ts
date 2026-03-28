@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-const FOLDER_EMOJI = ['🔵', '🟢', '🟡', '🟣', '🔴', '🟠'];
+const FOLDER_EMOJI = ['🔵', '🟢', '🟡', '🟣', '🔴', '🟠', '⚪', '🟤', '🩵', '🩷', '🩶'];
 
 const TERMINAL_COLOR_IDS = [
     'terminal.ansiBlue',
@@ -9,6 +9,11 @@ const TERMINAL_COLOR_IDS = [
     'terminal.ansiMagenta',
     'terminal.ansiRed',
     'terminal.ansiBrightYellow',
+    'terminal.ansiWhite',
+    'terminal.ansiBrightRed',
+    'terminal.ansiCyan',
+    'terminal.ansiBrightMagenta',
+    'terminal.ansiBrightBlack',
 ];
 
 const PANE_TINT_COLORS = [
@@ -18,6 +23,11 @@ const PANE_TINT_COLORS = [
     'rgba(180, 30, 255, 0.04)',
     'rgba(255, 30, 30, 0.04)',
     'rgba(255, 150, 30, 0.04)',
+    'rgba(200, 200, 200, 0.035)',
+    'rgba(140, 80, 20, 0.045)',
+    'rgba(30, 200, 220, 0.04)',
+    'rgba(255, 120, 180, 0.04)',
+    'rgba(130, 130, 130, 0.04)',
 ];
 
 export function getFolderEmoji(index: number): string {

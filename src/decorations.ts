@@ -158,13 +158,13 @@ export function applyCustomTabLabels() {
         let template: string;
         switch (format) {
             case 'emoji-dir-file':
-                template = `${emoji} ${shortName} / \${filename}.\${extname}`;
+                template = `${emoji} ${shortName} / \${filename}`;
                 break;
             case 'emoji-file':
-                template = `${emoji} \${filename}.\${extname}`;
+                template = `${emoji} \${filename}`;
                 break;
             case 'dir-file':
-                template = `${shortName} / \${filename}.\${extname}`;
+                template = `${shortName} / \${filename}`;
                 break;
             default:
                 return;
@@ -190,20 +190,25 @@ export function clearCustomTabLabels() {
     if (!folders) { return; }
 
     const labelConfig = vscode.workspace.getConfiguration('workbench.editor');
-    const existing = labelConfig.get<Record<string, string>>('customLabels.patterns', {});
-    if (!existing || Object.keys(existing).length === 0) { return; }
+    const existing = { ...labelConfig.get<Record<string, string>>('customLabels.patterns', {}) };
+    if (Object.keys(existing).length === 0) { return; }
 
     let changed = false;
-    for (const folder of folders) {
-        const p = folder.uri.fsPath;
-        if (existing[`${p}/**`]) { delete existing[`${p}/**`]; changed = true; }
-        if (existing[`${p}/*`]) { delete existing[`${p}/*`]; changed = true; }
+    for (const key of Object.keys(existing)) {
+        for (const folder of folders) {
+            if (key.startsWith(folder.uri.fsPath)) {
+                delete existing[key];
+                changed = true;
+                break;
+            }
+        }
     }
 
     if (changed) {
         labelConfig.update('customLabels.patterns',
             Object.keys(existing).length > 0 ? existing : undefined,
-            vscode.ConfigurationTarget.Workspace);
-        log('Cleared custom tab labels');
+            vscode.ConfigurationTarget.Workspace)
+            .then(() => log('Cleared custom tab labels'),
+                  err => log(`Failed to clear tab labels: ${err}`));
     }
 }

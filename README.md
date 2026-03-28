@@ -36,7 +36,7 @@ Both are on by default and can be toggled independently.
 
 - **Auto-Switch** -- Switching panes automatically switches to that folder's terminal. Disable with `colorTerminals`.
 - **Eager Creation** -- Creates a terminal for every workspace folder on startup, adopting existing ones. Disable with `eagerTerminals` if you prefer to create terminals manually.
-- **Layout** -- Arrange folder terminals as separate **tabs** (default) or **split** side-by-side in one panel.
+- **Layout** -- Arrange folder terminals as separate **tabs** (default) or **split** side-by-side in one panel. Note: in split mode, if a terminal is closed and recreated it may reopen as a separate tab due to a VS Code API limitation.
 
 ### Navigation
 
@@ -122,6 +122,17 @@ code --install-extension multi-root-pane-manager-*.vsix
 
 - VS Code 1.75.0+
 - A multi-root workspace (2+ folders)
+
+## Uninstalling
+
+Before disabling or uninstalling, remove these from your `.code-workspace` or `.vscode/settings.json`:
+
+```json
+"workbench.editor.customLabels.patterns"
+"workbench.editor.closeEmptyGroups"
+```
+
+VS Code does not reliably run extension cleanup on uninstall, so these settings may persist otherwise.
 
 ## Diagnostics
 
