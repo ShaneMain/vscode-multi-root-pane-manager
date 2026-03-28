@@ -202,7 +202,7 @@ export async function sortAllOpenTabs() {
     log('Sorting all open tabs...');
     dumpTabGroups('before sorting');
 
-    const toMove: Array<{ uri: vscode.Uri; sourceColumn: number; targetColumn: number }> = [];
+    const toMove: Array<{ uri: vscode.Uri; tab: vscode.Tab; targetColumn: number }> = [];
 
     for (const group of vscode.window.tabGroups.all) {
         for (const tab of group.tabs) {
@@ -213,7 +213,7 @@ export async function sortAllOpenTabs() {
             if (!root) { continue; }
             const targetColumn = getColumnForFolder(root.index);
             if (targetColumn === -1 || group.viewColumn === targetColumn) { continue; }
-            toMove.push({ uri, sourceColumn: group.viewColumn, targetColumn });
+            toMove.push({ uri, tab, targetColumn });
         }
     }
 
@@ -222,25 +222,28 @@ export async function sortAllOpenTabs() {
     log(`Found ${toMove.length} tab(s) to sort`);
     isMoving = true;
     try {
-        for (const { uri, sourceColumn, targetColumn } of toMove) {
-            const fileName = uri.path.split('/').pop();
-            log(`  Moving "${fileName}" from col ${sourceColumn} to col ${targetColumn}`);
-
-            let freshTab: vscode.Tab | undefined;
-            for (const group of vscode.window.tabGroups.all) {
-                freshTab = group.tabs.find(t =>
-                    t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri.toString()
-                );
-                if (freshTab) { break; }
-            }
-
-            if (freshTab) {
-                await vscode.window.tabGroups.close(freshTab);
-            } else {
-                log(`  Tab "${fileName}" already gone, skipping close`);
-            }
-
+        // Open all tabs in target columns first (preserves groups)
+        for (const { uri, targetColumn } of toMove) {
+            log(`  Opening "${uri.path.split('/').pop()}" in col ${targetColumn}`);
             await vscode.commands.executeCommand('vscode.open', uri, { viewColumn: targetColumn, preview: false });
+        }
+        // Then close originals in one batch
+        const staleTabsToClose: vscode.Tab[] = [];
+        for (const { uri, tab } of toMove) {
+            // Find the original tab (still in the wrong group) by matching uri + group
+            for (const group of vscode.window.tabGroups.all) {
+                if (group.viewColumn === tab.group.viewColumn) {
+                    const stale = group.tabs.find(t =>
+                        t.input instanceof vscode.TabInputText && t.input.uri.toString() === uri.toString()
+                    );
+                    if (stale) { staleTabsToClose.push(stale); }
+                    break;
+                }
+            }
+        }
+        if (staleTabsToClose.length > 0) {
+            log(`  Closing ${staleTabsToClose.length} stale tab(s)`);
+            await vscode.window.tabGroups.close(staleTabsToClose);
         }
     } catch (err) {
         log(`ERROR sorting tabs: ${err}`);

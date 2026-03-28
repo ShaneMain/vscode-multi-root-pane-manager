@@ -2,81 +2,71 @@ name: Release Extension
 
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version to release (e.g., v0.1.0)'
-        required: true
-        type: string
+    branches: [master]
+    paths-ignore:
+      - 'package.json'
+      - 'package-lock.json'
 
 jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
+      pull-requests: write
     steps:
     - uses: actions/checkout@v6
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Setup Node.js
-      uses: actions/setup-node@v6
+    - uses: actions/setup-node@v6
       with:
         node-version: '20'
         cache: 'npm'
 
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Compile extension
-      run: npm run compile
-
-    - name: Package extension
-      run: npx vsce package
-
-    - name: Get version from package.json
-      id: package_version
-      run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
-
-    - name: Determine release type
-      id: release_type
+    - name: Bump version
+      id: bump
       run: |
-        # Get the branch that contains this tag
-        BRANCH=$(git branch -r --contains ${{ github.ref_name }} | grep -E '(origin/master|origin/main)' || echo "")
-        if [ -z "$BRANCH" ]; then
-          echo "prerelease=true" >> $GITHUB_OUTPUT
-          echo "release_name=Pre-release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
-        else
-          echo "prerelease=false" >> $GITHUB_OUTPUT
-          echo "release_name=Release ${{ github.ref_name }}" >> $GITHUB_OUTPUT
-        fi
+        NEW_VERSION=$(npm version patch --no-git-tag-version)
+        echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+
+    - run: npm ci
+    - run: npm run compile
+    - run: npx vsce package
+
+    - name: Commit version bump via PR
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        BRANCH="chore/bump-${{ steps.bump.outputs.version }}"
+        git checkout -b "$BRANCH"
+        git add package.json package-lock.json
+        git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
+        git push origin "$BRANCH"
+        gh pr create --base master --head "$BRANCH" \
+          --title "chore: bump version to ${{ steps.bump.outputs.version }}" \
+          --body "Automated version bump" --label "automated"
+        gh pr merge "$BRANCH" --squash --auto --delete-branch
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Tag release
+      run: |
+        git tag ${{ steps.bump.outputs.version }}
+        git push origin ${{ steps.bump.outputs.version }}
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.ref_name }}
-        name: ${{ steps.release_type.outputs.release_name }}
-        draft: false
-        prerelease: ${{ steps.release_type.outputs.prerelease }}
-        files: |
-          *.vsix
+        tag_name: ${{ steps.bump.outputs.version }}
+        name: Release ${{ steps.bump.outputs.version }}
+        files: '*.vsix'
         body: |
           ## Installation
 
-          Download the `.vsix` file below and install it in VS Code:
-          1. Open VS Code
-          2. Press `Ctrl+Shift+P` (or `Cmd+Shift+P` on Mac)
-          3. Type "Extensions: Install from VSIX..."
-          4. Select the downloaded file
-
-          Or install via command line:
+          Download the `.vsix` file below and install:
           ```bash
-          code --install-extension multi-root-pane-manager-${{ steps.package_version.outputs.version }}.vsix
+          code --install-extension multi-root-pane-manager-${{ steps.bump.outputs.version }}.vsix
           ```
-
-          ## What's Changed
-          - See commit history for details
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

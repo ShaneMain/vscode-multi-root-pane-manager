@@ -3,7 +3,7 @@ import * as path from 'path';
 import { initLog, log } from './log';
 import { getFolderEmoji } from './colors';
 import { initPanes, applyLayout, getColumnForFolder, ensurePaneForFolder, getActivePaneCount, getActiveFolderIndices, setActiveFolderIndices, setPrimaryPaneIndex, getPrimaryPaneIndex, isLazy } from './layout';
-import { focusTerminalForFolder, initTerminals } from './terminals';
+import { focusTerminalForFolder, initTerminals, disposeAllTerminals } from './terminals';
 import { enableTabColors, disableTabColors, enablePaneTinting, disablePaneTinting, applyCustomTabLabels, clearCustomTabLabels, refreshDecorations } from './decorations';
 import { initRouting, sortAllOpenTabs, startListening, stopListening, getIsMoving } from './routing';
 
@@ -93,6 +93,43 @@ function debouncedPrimarySwitch(folderIndex: number, folderName: string) {
     }, 300);
 }
 
+function waitForEditorGroups(expected: number, timeoutMs = 3000): Promise<void> {
+    if (vscode.window.tabGroups.all.length >= expected) { return Promise.resolve(); }
+    return new Promise(resolve => {
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (vscode.window.tabGroups.all.length >= expected || Date.now() - start > timeoutMs) {
+                clearInterval(interval);
+                log(`Editor groups ready: ${vscode.window.tabGroups.all.length}/${expected} (${Date.now() - start}ms)`);
+                resolve();
+            }
+        }, 50);
+    });
+}
+
+function waitForTabsStable(timeoutMs = 5000): Promise<void> {
+    return new Promise(resolve => {
+        let lastCount = 0;
+        let stableTime = 0;
+        const start = Date.now();
+        const interval = setInterval(() => {
+            let count = 0;
+            for (const g of vscode.window.tabGroups.all) { count += g.tabs.length; }
+            if (count === lastCount) {
+                stableTime += 100;
+            } else {
+                stableTime = 0;
+                lastCount = count;
+            }
+            if (stableTime >= 300 || Date.now() - start > timeoutMs) {
+                clearInterval(interval);
+                log(`Tabs stable: ${count} total (${Date.now() - start}ms)`);
+                resolve();
+            }
+        }, 100);
+    });
+}
+
 function persistActiveFolders() {
     context.workspaceState.update('activeFolderIndices', getActiveFolderIndices());
 }
@@ -167,50 +204,75 @@ export function activate(ctx: vscode.ExtensionContext) {
         editorConfig.update('closeEmptyGroups', false, vscode.ConfigurationTarget.Workspace);
     }
 
-    // Layout + sort
-    if (isEnabled) {
-        const sortOnStartup = config.get('sortOnStartup', true);
-
-        if (isLazy()) {
-            // Restore persisted active folders, then seed from open tabs
-            const persisted = restoreActiveFolders();
-            const indices = getActiveFolderIndices();
-            for (const i of persisted) {
-                if (i < folders.length && indices.indexOf(i) === -1) { indices.push(i); }
-            }
-            for (const group of vscode.window.tabGroups.all) {
-                for (const tab of group.tabs) {
-                    if (tab.input instanceof vscode.TabInputText) {
-                        const root = vscode.workspace.getWorkspaceFolder(tab.input.uri);
-                        if (root && indices.indexOf(root.index) === -1) { indices.push(root.index); }
-                    }
-                }
-            }
-            indices.sort((a, b) => a - b);
-            const paneCount = Math.max(indices.length, 1);
-            log(`Lazy panes: ${indices.length} folder(s) have open files`);
-            applyLayout(paneCount)
-                .then(() => new Promise(resolve => setTimeout(resolve, 500)))
-                .then(async () => {
-                    if (sortOnStartup) { await sortAllOpenTabs(); }
-                    persistActiveFolders();
-                })
-                .catch(err => log(`Layout/sort failed: ${err}`));
-        } else {
-            applyLayout(folders.length)
-                .then(() => new Promise(resolve => setTimeout(resolve, 500)))
-                .then(async () => { if (sortOnStartup) { await sortAllOpenTabs(); } })
-                .catch(err => log(`Layout/sort failed: ${err}`));
-        }
-        startListening(isEnabled, updateStatusBar);
-    }
-
-    // Decorations
+    // Decorations (non-label visuals are safe to apply early)
     try { if (config.get('colorTabs', true)) { enableTabColors(); } } catch (err) { log(`Tab color init failed: ${err}`); }
     try { if (config.get('colorPanes', true)) { enablePaneTinting(); } } catch (err) { log(`Pane tinting init failed: ${err}`); }
 
-    // Custom tab labels
-    applyCustomTabLabels();
+    // Layout + sort + labels (sequenced: layout → wait for groups → sort → labels → listen)
+    if (isEnabled) {
+        const sortOnStartup = config.get('sortOnStartup', true);
+
+        const initSequence = async () => {
+            let paneCount: number;
+
+            if (isLazy()) {
+                const persisted = restoreActiveFolders();
+                const indices = getActiveFolderIndices();
+                for (const i of persisted) {
+                    if (i < folders.length && indices.indexOf(i) === -1) { indices.push(i); }
+                }
+                for (const group of vscode.window.tabGroups.all) {
+                    for (const tab of group.tabs) {
+                        if (tab.input instanceof vscode.TabInputText) {
+                            const root = vscode.workspace.getWorkspaceFolder(tab.input.uri);
+                            if (root && indices.indexOf(root.index) === -1) { indices.push(root.index); }
+                        }
+                    }
+                }
+                indices.sort((a, b) => a - b);
+                paneCount = Math.max(indices.length, 1);
+                log(`Lazy panes: ${indices.length} folder(s) have open files`);
+            } else {
+                paneCount = folders.length;
+            }
+
+            await applyLayout(paneCount);
+            await waitForEditorGroups(paneCount);
+            await waitForTabsStable();
+
+            // Re-evaluate active folders based on actual tabs after VS Code finishes restoring
+            if (isLazy()) {
+                const actualIndices: number[] = [];
+                for (const group of vscode.window.tabGroups.all) {
+                    for (const tab of group.tabs) {
+                        if (tab.input instanceof vscode.TabInputText) {
+                            const root = vscode.workspace.getWorkspaceFolder(tab.input.uri);
+                            if (root && actualIndices.indexOf(root.index) === -1) { actualIndices.push(root.index); }
+                        }
+                    }
+                }
+                actualIndices.sort((a, b) => a - b);
+                const indices = getActiveFolderIndices();
+                if (actualIndices.length < indices.length) {
+                    setActiveFolderIndices(actualIndices);
+                    paneCount = Math.max(actualIndices.length, 1);
+                    log(`Lazy panes: shrunk to ${actualIndices.length} after tab restore`);
+                    await applyLayout(paneCount);
+                    await waitForEditorGroups(paneCount);
+                }
+            }
+
+            if (sortOnStartup) { await sortAllOpenTabs(); }
+            if (isLazy()) { persistActiveFolders(); }
+
+            applyCustomTabLabels();
+            startListening(isEnabled, updateStatusBar);
+        };
+
+        initSequence().catch(err => log(`Layout/sort failed: ${err}`));
+    } else {
+        applyCustomTabLabels();
+    }
 
     // Terminals
     initTerminals(folders);
@@ -236,9 +298,11 @@ export function activate(ctx: vscode.ExtensionContext) {
             if (isEnabled) {
                 applyLayout(getActivePaneCount()).then(() => sortAllOpenTabs()).catch(err => log(`Toggle failed: ${err}`));
                 startListening(isEnabled, updateStatusBar);
+                applyCustomTabLabels();
                 vscode.window.showInformationMessage('Pane Manager: ON');
             } else {
                 stopListening();
+                clearCustomTabLabels();
                 vscode.window.showInformationMessage('Pane Manager: OFF');
             }
         }),
@@ -317,6 +381,13 @@ export function activate(ctx: vscode.ExtensionContext) {
             }
             if (e.affectsConfiguration('multiRootPaneManager.tabLabelFormat')) {
                 applyCustomTabLabels();
+            }
+            if (e.affectsConfiguration('multiRootPaneManager.colorTerminals') || e.affectsConfiguration('multiRootPaneManager.terminalLayout') || e.affectsConfiguration('multiRootPaneManager.eagerTerminals')) {
+                const folders = vscode.workspace.workspaceFolders;
+                if (folders && folders.length >= 2) {
+                    disposeAllTerminals();
+                    initTerminals(folders);
+                }
             }
         })
     );
