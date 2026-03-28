@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     steps:
     - uses: actions/checkout@v6
       with:
@@ -32,14 +33,26 @@ jobs:
     - run: npm run compile
     - run: npx vsce package
 
-    - name: Commit version bump and tag
+    - name: Commit version bump via PR
       run: |
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
+        BRANCH="chore/bump-${{ steps.bump.outputs.version }}"
+        git checkout -b "$BRANCH"
         git add package.json package-lock.json
         git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}"
+        git push origin "$BRANCH"
+        gh pr create --base master --head "$BRANCH" \
+          --title "chore: bump version to ${{ steps.bump.outputs.version }}" \
+          --body "Automated version bump" --label "automated"
+        gh pr merge "$BRANCH" --squash --auto --delete-branch
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Tag release
+      run: |
         git tag ${{ steps.bump.outputs.version }}
-        git push origin master --tags
+        git push origin ${{ steps.bump.outputs.version }}
 
     - name: Create Release
       uses: softprops/action-gh-release@v2
