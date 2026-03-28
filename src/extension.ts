@@ -3,7 +3,7 @@ import * as path from 'path';
 import { initLog, log } from './log';
 import { getFolderEmoji } from './colors';
 import { initPanes, applyLayout, getColumnForFolder, ensurePaneForFolder, getActivePaneCount, getActiveFolderIndices, setActiveFolderIndices, setPrimaryPaneIndex, getPrimaryPaneIndex, isLazy } from './layout';
-import { focusTerminalForFolder, initTerminals } from './terminals';
+import { focusTerminalForFolder, initTerminals, disposeAllTerminals } from './terminals';
 import { enableTabColors, disableTabColors, enablePaneTinting, disablePaneTinting, applyCustomTabLabels, clearCustomTabLabels, refreshDecorations } from './decorations';
 import { initRouting, sortAllOpenTabs, startListening, stopListening, getIsMoving } from './routing';
 
@@ -333,6 +333,13 @@ export function activate(ctx: vscode.ExtensionContext) {
             }
             if (e.affectsConfiguration('multiRootPaneManager.tabLabelFormat')) {
                 applyCustomTabLabels();
+            }
+            if (e.affectsConfiguration('multiRootPaneManager.colorTerminals') || e.affectsConfiguration('multiRootPaneManager.terminalLayout') || e.affectsConfiguration('multiRootPaneManager.eagerTerminals')) {
+                const folders = vscode.workspace.workspaceFolders;
+                if (folders && folders.length >= 2) {
+                    disposeAllTerminals();
+                    initTerminals(folders);
+                }
             }
         })
     );

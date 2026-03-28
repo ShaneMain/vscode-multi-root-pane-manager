@@ -5,11 +5,23 @@ import { getFolderColor } from './colors';
 const terminalMap = new Map<string, vscode.Terminal>();
 let firstTerminal: vscode.Terminal | undefined;
 
+function isTerminalAlive(t: vscode.Terminal): boolean {
+    return t.exitStatus === undefined && vscode.window.terminals.indexOf(t) !== -1;
+}
+
+function findLiveSplitParent(): vscode.Terminal | undefined {
+    if (firstTerminal && isTerminalAlive(firstTerminal)) { return firstTerminal; }
+    for (const t of terminalMap.values()) {
+        if (isTerminalAlive(t)) { return t; }
+    }
+    return undefined;
+}
+
 function getOrCreateTerminal(folder: vscode.WorkspaceFolder, split: boolean): vscode.Terminal {
     // Check if we already have one
     let terminal = terminalMap.get(folder.name);
 
-    if (terminal && terminal.exitStatus !== undefined) {
+    if (terminal && !isTerminalAlive(terminal)) {
         terminalMap.delete(folder.name);
         terminal = undefined;
     }
@@ -28,12 +40,13 @@ function getOrCreateTerminal(folder: vscode.WorkspaceFolder, split: boolean): vs
     // Create new
     if (!terminal) {
         const color = getFolderColor(folder.index);
-        if (split && firstTerminal && firstTerminal.exitStatus === undefined) {
+        const parent = split ? findLiveSplitParent() : undefined;
+        if (parent) {
             terminal = vscode.window.createTerminal({
                 name: folder.name,
                 cwd: folder.uri,
                 color,
-                location: { parentTerminal: firstTerminal }
+                location: { parentTerminal: parent }
             });
         } else {
             terminal = vscode.window.createTerminal({
@@ -41,12 +54,12 @@ function getOrCreateTerminal(folder: vscode.WorkspaceFolder, split: boolean): vs
                 cwd: folder.uri,
                 color
             });
-            if (!firstTerminal || firstTerminal.exitStatus !== undefined) {
-                firstTerminal = terminal;
-            }
+        }
+        if (!firstTerminal || firstTerminal.exitStatus !== undefined) {
+            firstTerminal = terminal;
         }
         terminalMap.set(folder.name, terminal);
-        log(`Created terminal "${folder.name}"${split && firstTerminal !== terminal ? ' (split)' : ''}`);
+        log(`Created terminal "${folder.name}"${parent ? ' (split)' : ''}`);
     }
 
     return terminal;
@@ -57,6 +70,18 @@ export function focusTerminalForFolder(folder: vscode.WorkspaceFolder) {
     if (!config.get('colorTerminals', true)) { return; }
 
     const split = config.get<string>('terminalLayout', 'tabs') === 'split';
+
+    // In split mode, if no live terminals exist, reinit all so the split layout is restored
+    if (split && !findLiveSplitParent()) {
+        const folders = vscode.workspace.workspaceFolders;
+        if (folders && folders.length >= 2) {
+            for (const f of folders) { getOrCreateTerminal(f, split); }
+            const terminal = terminalMap.get(folder.name);
+            if (terminal) { terminal.show(true); }
+            return;
+        }
+    }
+
     const terminal = getOrCreateTerminal(folder, split);
     terminal.show(true);
 }
@@ -71,6 +96,12 @@ export function initTerminals(folders: readonly vscode.WorkspaceFolder[]) {
     }
     const first = terminalMap.get(folders[0].name);
     if (first) { first.show(true); }
+}
+
+export function disposeAllTerminals() {
+    for (const t of terminalMap.values()) { if (t.exitStatus === undefined) { t.dispose(); } }
+    terminalMap.clear();
+    firstTerminal = undefined;
 }
 
 export function getTerminalMap() { return terminalMap; }
