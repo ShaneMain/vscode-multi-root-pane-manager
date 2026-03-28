@@ -125,17 +125,16 @@ code --install-extension multi-root-pane-manager-*.vsix
 
 ## Uninstalling
 
-Before disabling or uninstalling, remove these from your `.code-workspace` or `.vscode/settings.json`:
+After uninstalling, remove these from your `.code-workspace` or `.vscode/settings.json`:
 
 ```json
 "workbench.editor.customLabels.patterns"
 "workbench.editor.closeEmptyGroups"
 ```
 
-VS Code does not reliably run extension cleanup on uninstall, so these settings may persist otherwise.
+VS Code does not reliably run extension cleanup on uninstall, so these settings may persist.
 
 ## Diagnostics
-
 Open the **Output** panel and select **Pane Manager** to see logs for tab events, moves, layout changes, and navigation.
 
 ## License
